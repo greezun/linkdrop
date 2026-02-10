@@ -34,13 +34,9 @@ kotlin {
         val androidMain by getting
         val desktopMain by getting
 
-        androidMain.dependencies {
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.activity.compose)
-        }
-
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(libs.jmdns)
         }
 
         androidMain.dependencies {
