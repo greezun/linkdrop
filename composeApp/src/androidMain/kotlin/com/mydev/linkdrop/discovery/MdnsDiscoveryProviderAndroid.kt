@@ -16,9 +16,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -57,6 +57,7 @@ class MdnsDiscoveryProviderAndroid(
 
     // Keep track of discovered services -> deviceId mapping for Lost events
     private val serviceNameToDeviceId = ConcurrentHashMap<String, String>()
+    private val resolveRetryAttempts = ConcurrentHashMap<String, Int>()
 
     // Serialize resolves (avoid "already active")
     private val resolveQueue = Channel<NsdServiceInfo>(capacity = Channel.BUFFERED)
@@ -141,12 +142,15 @@ class MdnsDiscoveryProviderAndroid(
                 if (!serviceInfo.serviceType.contains(serviceType)) return
 
                 // Queue resolve (serial)
-                scope.launch { resolveQueue.send(serviceInfo) }
+                if (resolveQueue.trySend(serviceInfo).isFailure) {
+                    Log.w("NSD", "resolve queue is not accepting items for ${serviceInfo.serviceName}")
+                }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                 Log.d("NSD", "LOST name=${serviceInfo.serviceName} type=${serviceInfo.serviceType}")
                 val id = serviceNameToDeviceId.remove(serviceInfo.serviceName) ?: serviceInfo.serviceName
+                resolveRetryAttempts.remove(retryKey(serviceInfo))
                 if (id == localDeviceId) return
                 scope.launch { _events.emit(DiscoveryEvent.Lost(id)) }
             }
@@ -171,11 +175,37 @@ class MdnsDiscoveryProviderAndroid(
 
         val resolveListener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                // MVP: ignore (could retry)
+                if (!started.get()) return
+
+                val key = retryKey(serviceInfo)
+                val nextAttempt = (resolveRetryAttempts[key] ?: 0) + 1
+                if (nextAttempt > MAX_RESOLVE_RETRIES) {
+                    resolveRetryAttempts.remove(key)
+                    Log.w(
+                        "NSD",
+                        "resolve failed permanently name=${serviceInfo.serviceName} code=$errorCode attempts=$MAX_RESOLVE_RETRIES"
+                    )
+                    return
+                }
+
+                resolveRetryAttempts[key] = nextAttempt
+                val backoffMs = INITIAL_RESOLVE_RETRY_BACKOFF_MS * nextAttempt
+                Log.d(
+                    "NSD",
+                    "resolve failed name=${serviceInfo.serviceName} code=$errorCode retry=$nextAttempt in ${backoffMs}ms"
+                )
+                scope.launch {
+                    delay(backoffMs)
+                    if (!started.get()) return@launch
+                    if (resolveQueue.trySend(serviceInfo).isFailure) {
+                        Log.w("NSD", "retry queue is not accepting items for ${serviceInfo.serviceName}")
+                    }
+                }
             }
 
             override fun onServiceResolved(resolved: NsdServiceInfo) {
                 val device = resolved.toDevice()
+                resolveRetryAttempts.remove(retryKey(resolved))
 
                 // Ignore ourselves
                 if (device.id == localDeviceId) return
@@ -210,6 +240,10 @@ class MdnsDiscoveryProviderAndroid(
         return attributes[key]?.toString(Charsets.UTF_8)
     }
 
+    private fun retryKey(serviceInfo: NsdServiceInfo): String {
+        return "${serviceInfo.serviceType}|${serviceInfo.serviceName}"
+    }
+
     companion object {
         // Android NSD expects type like "_linkdrop._tcp" (no trailing dot)
         const val SERVICE_TYPE: String = DiscoveryConstants.SERVICE_TYPE
@@ -219,5 +253,7 @@ class MdnsDiscoveryProviderAndroid(
 
         const val DEFAULT_PORT: Int = 58231
         const val DEFAULT_DEVICE_NAME: String = "Android"
+        const val MAX_RESOLVE_RETRIES: Int = 3
+        const val INITIAL_RESOLVE_RETRY_BACKOFF_MS: Long = 250
     }
 }
