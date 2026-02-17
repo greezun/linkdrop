@@ -1,5 +1,6 @@
 package com.mydev.linkdrop.discovery
 
+import com.mydev.linkdrop.DesktopDeviceIdStore
 import com.mydev.linkdrop.core.model.Capability
 import com.mydev.linkdrop.core.model.Device
 import com.mydev.linkdrop.core.model.Endpoint
@@ -10,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import java.net.InetAddress
-import java.util.UUID
 import javax.jmdns.JmDNS
 import javax.jmdns.ServiceEvent
 import javax.jmdns.ServiceInfo
@@ -18,27 +18,13 @@ import javax.jmdns.ServiceListener
 
 /**
  * Desktop (JVM) mDNS discovery implementation using JmDNS.
- *
- * What it does:
- * - Advertises this device as a LinkDrop service in local network (mDNS/Bonjour).
- * - Discovers other LinkDrop devices and emits [DiscoveryEvent].
- *
- * What it does NOT do (yet):
- * - Persist stable deviceId between app launches (we use random UUID by default).
- * - Emit Updated events (only Found/Lost).
  */
 class MdnsDiscoveryProviderDesktop(
-    private val serviceType: String = SERVICE_TYPE,
-    private val bindAddress: InetAddress? = null,
-
-    // Local identity (for MVP: defaults are OK, later we’ll make it stable & configurable)
-    private val localDeviceId: String = UUID.randomUUID().toString(),
-    private val localDeviceName: String = DEFAULT_DEVICE_NAME,
-
-    // Port of future local HTTP server (for MVP: fixed is OK)
     private val advertisePort: Int = DEFAULT_PORT,
 ) : DiscoveryProvider {
 
+    private val localDeviceId: String = DesktopDeviceIdStore().getOrCreate()
+    private val localDeviceName: String = getComputerName()
     private val _events = MutableSharedFlow<DiscoveryEvent>(extraBufferCapacity = 64)
     override val events: Flow<DiscoveryEvent> = _events
 
@@ -51,20 +37,22 @@ class MdnsDiscoveryProviderDesktop(
     override fun start() {
         if (jmdns != null) return
 
-        val mdns = if (bindAddress != null) JmDNS.create(bindAddress) else JmDNS.create()
+        val bindAddr = findWifiIpv4Address()
+        val mdns = if (bindAddr != null) JmDNS.create(bindAddr) else JmDNS.create()
         jmdns = mdns
 
         // 1) Advertise ourselves so other devices can find us
         val props = mapOf(
             TXT_DEVICE_ID to localDeviceId,
             TXT_DEVICE_NAME to localDeviceName,
-            // later: "pv" to "1", "cap" to "lan"
         )
 
+        // Use localDeviceId suffix to ensure uniqueness in the network
+        val uniqueServiceName = "$localDeviceName-${localDeviceId.takeLast(4)}"
+
         val info = ServiceInfo.create(
-            serviceType,
-            // Instance name visible in Bonjour browsers
-            "LinkDrop-$localDeviceName",
+            SERVICE_TYPE,
+            uniqueServiceName,
             advertisePort,
             0,
             0,
@@ -82,9 +70,7 @@ class MdnsDiscoveryProviderDesktop(
             }
 
             override fun serviceRemoved(event: ServiceEvent) {
-                // event.info can be null here, so Lost by service name fallback
                 val lostId = event.info?.getPropertyString(TXT_DEVICE_ID) ?: event.name
-                // Ignore ourselves
                 if (lostId == localDeviceId) return
 
                 scope.launch { _events.emit(DiscoveryEvent.Lost(lostId)) }
@@ -93,7 +79,6 @@ class MdnsDiscoveryProviderDesktop(
             override fun serviceResolved(event: ServiceEvent) {
                 val infoResolved = event.info ?: return
 
-                // Ignore ourselves (important: otherwise you’ll see your own device)
                 val remoteId = infoResolved.getPropertyString(TXT_DEVICE_ID) ?: infoResolved.name
                 if (remoteId == localDeviceId) return
 
@@ -103,17 +88,17 @@ class MdnsDiscoveryProviderDesktop(
         }
 
         listener = l
-        mdns.addServiceListener(serviceType, l)
+        mdns.addServiceListener(SERVICE_TYPE, l)
     }
 
     override fun stop() {
         val mdns = jmdns ?: return
 
-        // Stop discovery
-        listener?.let { mdns.removeServiceListener(serviceType, it) }
+        listener?.let {
+            mdns.removeServiceListener(SERVICE_TYPE, it)
+        }
         listener = null
 
-        // Remove advertised service
         registeredInfo?.let {
             try {
                 mdns.unregisterService(it)
@@ -124,14 +109,9 @@ class MdnsDiscoveryProviderDesktop(
         jmdns = null
         try {
             mdns.close()
-        } catch (_: Exception) {
-            // ignore
-        }
+        } catch (_: Exception) { /* ignore */ }
     }
 
-    /**
-     * Converts mDNS service info into our shared [Device] model.
-     */
     private fun ServiceInfo.toDevice(): Device {
         val id = getPropertyString(TXT_DEVICE_ID) ?: name
         val deviceName = getPropertyString(TXT_DEVICE_NAME) ?: name
@@ -150,13 +130,23 @@ class MdnsDiscoveryProviderDesktop(
         )
     }
 
+    private fun getComputerName(): String {
+        return try {
+            InetAddress.getLocalHost().hostName
+        } catch (e: Exception) {
+            "Desktop"
+        }
+    }
+
     companion object {
+        // Aligned with Android: JmDNS handles the trailing dot and .local automatically if needed,
+        // but typically "_linkdrop._tcp.local." is the full type.
+        // We use the same short type as on Android for consistency in registration.
         const val SERVICE_TYPE: String = "_linkdrop._tcp.local."
 
         const val TXT_DEVICE_ID = "id"
         const val TXT_DEVICE_NAME = "name"
 
         const val DEFAULT_PORT: Int = 58231
-        const val DEFAULT_DEVICE_NAME: String = "Desktop"
     }
 }
