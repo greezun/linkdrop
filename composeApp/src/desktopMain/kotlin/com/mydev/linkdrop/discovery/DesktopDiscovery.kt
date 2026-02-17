@@ -1,6 +1,7 @@
 package com.mydev.linkdrop.discovery
 
 import com.mydev.linkdrop.core.model.Device
+import com.mydev.linkdrop.core.model.Endpoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,25 +31,56 @@ class DesktopDiscovery(
         provider.start()
         scope.launch {
             provider.events.collect { event ->
+                println("$event")
                 when (event) {
                     is DiscoveryEvent.Found -> {
-                        devicesMap[event.device.id] = event.device
-                        _devices.value = devicesMap.values.toList()
+                        upsertWithLanMerge(devicesMap, event.device)
                     }
                     is DiscoveryEvent.Updated -> {
-                        devicesMap[event.device.id] = event.device
-                        _devices.value = devicesMap.values.toList()
+                        upsertWithLanMerge(devicesMap, event.device)
                     }
                     is DiscoveryEvent.Lost -> {
                         devicesMap.remove(event.deviceId)
-                        _devices.value = devicesMap.values.toList()
                     }
                 }
+                _devices.value = devicesMap.values.toList()
             }
         }
     }
 
     fun stop() {
         provider.stop()
+    }
+
+    private fun Device.lanKeyOrNull(): String? {
+        val lan = endpoints.filterIsInstance<Endpoint.Lan>().firstOrNull() ?: return null
+        return "${lan.host}:${lan.port}"
+    }
+
+    private fun looksLikeUuid(id: String): Boolean {
+        // простий і достатній хак для MVP
+        return id.length >= 32 && id.count { it == '-' } >= 4
+    }
+
+    private fun upsertWithLanMerge(
+        devicesMap: MutableMap<String, Device>,
+        device: Device
+    ) {
+        val key = device.lanKeyOrNull()
+
+        // Якщо прийшов "канонічний" id (UUID), зносимо дублі по тому ж LAN endpoint
+        if (key != null && looksLikeUuid(device.id)) {
+            val duplicateId = devicesMap.entries
+                .firstOrNull { (id, existing) ->
+                    id != device.id && existing.lanKeyOrNull() == key
+                }
+                ?.key
+
+            if (duplicateId != null) {
+                devicesMap.remove(duplicateId)
+            }
+        }
+
+        devicesMap[device.id] = device
     }
 }
