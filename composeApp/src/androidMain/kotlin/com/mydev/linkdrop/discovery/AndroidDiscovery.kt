@@ -2,6 +2,7 @@ package com.mydev.linkdrop.discovery
 
 import android.content.Context
 import com.mydev.linkdrop.core.model.Device
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,34 +23,29 @@ class AndroidDiscovery(
     private val provider: DiscoveryProvider = MdnsDiscoveryProviderAndroid(context.applicationContext)
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var collectJob: Job? = null
+    private val accumulator = DiscoveryDeviceAccumulator()
 
-    private val devicesMap = LinkedHashMap<String, Device>()
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
 
     fun start() {
+        if (collectJob?.isActive == true) return
+
+        accumulator.reset()
+        _devices.value = emptyList()
+
         provider.start()
-        scope.launch {
+        collectJob = scope.launch {
             provider.events.collect { event ->
-                when (event) {
-                    is DiscoveryEvent.Found -> {
-                        devicesMap[event.device.id] = event.device
-                        _devices.value = devicesMap.values.toList()
-                    }
-                    is DiscoveryEvent.Updated -> {
-                        devicesMap[event.device.id] = event.device
-                        _devices.value = devicesMap.values.toList()
-                    }
-                    is DiscoveryEvent.Lost -> {
-                        devicesMap.remove(event.deviceId)
-                        _devices.value = devicesMap.values.toList()
-                    }
-                }
+                _devices.value = accumulator.onEvent(event)
             }
         }
     }
 
     fun stop() {
+        collectJob?.cancel()
+        collectJob = null
         provider.stop()
     }
 }
