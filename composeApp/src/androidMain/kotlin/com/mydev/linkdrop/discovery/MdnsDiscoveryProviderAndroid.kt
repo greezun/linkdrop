@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.Log
 import com.mydev.linkdrop.AndroidDeviceIdStore
 import com.mydev.linkdrop.core.model.Capability
+import com.mydev.linkdrop.core.model.DiscoveryConstants
 import com.mydev.linkdrop.core.model.Device
 import com.mydev.linkdrop.core.model.Endpoint
 import kotlinx.coroutines.CoroutineScope
@@ -211,7 +212,7 @@ class MdnsDiscoveryProviderAndroid(
 
     companion object {
         // Android NSD expects type like "_linkdrop._tcp" (no trailing dot)
-        const val SERVICE_TYPE: String = "_linkdrop._tcp"
+        const val SERVICE_TYPE: String = DiscoveryConstants.SERVICE_TYPE
 
         const val TXT_DEVICE_ID = "id"
         const val TXT_DEVICE_NAME = "name"

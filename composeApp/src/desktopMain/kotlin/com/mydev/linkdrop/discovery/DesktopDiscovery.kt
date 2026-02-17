@@ -2,6 +2,7 @@ package com.mydev.linkdrop.discovery
 
 import com.mydev.linkdrop.core.model.Device
 import com.mydev.linkdrop.core.model.Endpoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,16 +23,21 @@ class DesktopDiscovery(
     private val provider: DiscoveryProvider = MdnsDiscoveryProviderDesktop()
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var collectJob: Job? = null
 
     private val devicesMap = LinkedHashMap<String, Device>()
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
 
     fun start() {
+        if (collectJob?.isActive == true) return
+
+        devicesMap.clear()
+        _devices.value = emptyList()
+
         provider.start()
-        scope.launch {
+        collectJob = scope.launch {
             provider.events.collect { event ->
-                println("$event")
                 when (event) {
                     is DiscoveryEvent.Found -> {
                         upsertWithLanMerge(devicesMap, event.device)
@@ -49,6 +55,8 @@ class DesktopDiscovery(
     }
 
     fun stop() {
+        collectJob?.cancel()
+        collectJob = null
         provider.stop()
     }
 

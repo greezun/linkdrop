@@ -15,3 +15,8 @@ sealed interface Endpoint {
      */
     data class Lan(val host: String, val port: Int) : Endpoint
 }
+
+object DiscoveryConstants {
+    // Canonical DNS-SD service type for LinkDrop discovery.
+    const val SERVICE_TYPE: String = "_linkdrop._tcp"
+}

@@ -2,6 +2,7 @@ package com.mydev.linkdrop.discovery
 
 import com.mydev.linkdrop.DesktopDeviceIdStore
 import com.mydev.linkdrop.core.model.Capability
+import com.mydev.linkdrop.core.model.DiscoveryConstants
 import com.mydev.linkdrop.core.model.Device
 import com.mydev.linkdrop.core.model.Endpoint
 import kotlinx.coroutines.CoroutineScope
@@ -139,10 +140,7 @@ class MdnsDiscoveryProviderDesktop(
     }
 
     companion object {
-        // Aligned with Android: JmDNS handles the trailing dot and .local automatically if needed,
-        // but typically "_linkdrop._tcp.local." is the full type.
-        // We use the same short type as on Android for consistency in registration.
-        const val SERVICE_TYPE: String = "_linkdrop._tcp.local."
+        const val SERVICE_TYPE: String = "${DiscoveryConstants.SERVICE_TYPE}.local."
 
         const val TXT_DEVICE_ID = "id"
         const val TXT_DEVICE_NAME = "name"

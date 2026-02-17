@@ -2,6 +2,7 @@ package com.mydev.linkdrop.discovery
 
 import android.content.Context
 import com.mydev.linkdrop.core.model.Device
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,14 +23,20 @@ class AndroidDiscovery(
     private val provider: DiscoveryProvider = MdnsDiscoveryProviderAndroid(context.applicationContext)
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var collectJob: Job? = null
 
     private val devicesMap = LinkedHashMap<String, Device>()
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices
 
     fun start() {
+        if (collectJob?.isActive == true) return
+
+        devicesMap.clear()
+        _devices.value = emptyList()
+
         provider.start()
-        scope.launch {
+        collectJob = scope.launch {
             provider.events.collect { event ->
                 when (event) {
                     is DiscoveryEvent.Found -> {
@@ -50,6 +57,8 @@ class AndroidDiscovery(
     }
 
     fun stop() {
+        collectJob?.cancel()
+        collectJob = null
         provider.stop()
     }
 }
