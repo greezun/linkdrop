@@ -16,8 +16,8 @@ class AndroidLanTransferApi : TransferApi {
         val lan = target.endpoints.filterIsInstance<Endpoint.Lan>().firstOrNull()
             ?: throw IllegalArgumentException("Target device has no LAN endpoint")
 
-        val endpoint = "http://${lan.host}:${lan.port}/share/url"
-        val body = payload.toJson()
+        val endpoint = TransferProtocol.shareUrlEndpoint(lan.host, lan.port)
+        val body = TransferProtocol.serializeShareUrlRequest(payload)
         val bodyBytes = body.toByteArray(StandardCharsets.UTF_8)
 
         withContext(Dispatchers.IO) {
@@ -49,26 +49,6 @@ class AndroidLanTransferApi : TransferApi {
                 throw t
             }
         }
-    }
-
-    private fun ShareUrlRequest.toJson(): String {
-        return buildString {
-            append("{")
-            append("\"url\":\"").append(escapeJson(url)).append("\",")
-            append("\"fromDeviceId\":\"").append(escapeJson(fromDeviceId)).append("\",")
-            append("\"fromName\":\"").append(escapeJson(fromName)).append("\",")
-            append("\"sentAtEpochMs\":").append(sentAtEpochMs)
-            append("}")
-        }
-    }
-
-    private fun escapeJson(value: String): String {
-        return value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
     }
 
     companion object {

@@ -26,7 +26,7 @@ class DesktopUrlReceiver(
         if (server != null) return
 
         val created = HttpServer.create(InetSocketAddress(port), 0)
-        created.createContext("/share/url") { exchange ->
+        created.createContext(TransferProtocol.SHARE_URL_PATH) { exchange ->
             handleShareUrl(exchange)
         }
 
@@ -52,15 +52,21 @@ class DesktopUrlReceiver(
             return
         }
 
+        if (exchange.requestURI.path != TransferProtocol.SHARE_URL_PATH) {
+            logger.warning("Rejected request: unknown path=${exchange.requestURI.path}")
+            writeResponse(exchange, 404, "not found")
+            return
+        }
+
         val payload = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
-        val parsed = parseShareUrlRequest(payload)
+        val parsed = TransferProtocol.parseShareUrlRequest(payload)
         if (parsed == null) {
             logger.warning("Rejected request: invalid payload json=$payload")
             writeResponse(exchange, 400, "invalid payload")
             return
         }
 
-        if (!isValidUrl(parsed.url)) {
+        if (!TransferProtocol.isValidUrl(parsed.url)) {
             logger.warning("Rejected request: invalid url='${parsed.url}' payload=$payload")
             writeResponse(exchange, 400, "invalid url")
             return
@@ -91,45 +97,6 @@ class DesktopUrlReceiver(
         } catch (t: Throwable) {
             logger.log(Level.SEVERE, "Failed to write response status=$statusCode body=$body", t)
         }
-    }
-
-    private fun parseShareUrlRequest(rawJson: String): ShareUrlRequest? {
-        val url = extractJsonString(rawJson, "url") ?: return null
-        val fromDeviceId = extractJsonString(rawJson, "fromDeviceId") ?: return null
-        val fromName = extractJsonString(rawJson, "fromName") ?: return null
-        val sentAtEpochMs = extractJsonLong(rawJson, "sentAtEpochMs") ?: return null
-
-        return ShareUrlRequest(
-            url = url,
-            fromDeviceId = fromDeviceId,
-            fromName = fromName,
-            sentAtEpochMs = sentAtEpochMs,
-        )
-    }
-
-    private fun extractJsonString(rawJson: String, key: String): String? {
-        val pattern = Regex("\"$key\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"")
-        val value = pattern.find(rawJson)?.groupValues?.get(1) ?: return null
-        return unescapeJsonString(value)
-    }
-
-    private fun extractJsonLong(rawJson: String, key: String): Long? {
-        val pattern = Regex("\"$key\"\\s*:\\s*(\\d+)")
-        return pattern.find(rawJson)?.groupValues?.get(1)?.toLongOrNull()
-    }
-
-    private fun unescapeJsonString(value: String): String {
-        return value
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-    }
-
-    private fun isValidUrl(value: String): Boolean {
-        val trimmed = value.trim()
-        return trimmed.startsWith("http://") || trimmed.startsWith("https://")
     }
 
     companion object {

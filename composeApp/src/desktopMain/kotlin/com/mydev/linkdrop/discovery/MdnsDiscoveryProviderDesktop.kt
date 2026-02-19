@@ -4,6 +4,7 @@ import com.mydev.linkdrop.DesktopDeviceIdStore
 import com.mydev.linkdrop.core.model.Capability
 import com.mydev.linkdrop.core.model.DiscoveryConstants
 import com.mydev.linkdrop.core.model.Device
+import com.mydev.linkdrop.core.model.DevicePlatform
 import com.mydev.linkdrop.core.model.Endpoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,7 @@ class MdnsDiscoveryProviderDesktop(
         val props = mapOf(
             TXT_DEVICE_ID to localDeviceId,
             TXT_DEVICE_NAME to localDeviceName,
+            TXT_DEVICE_PLATFORM to LOCAL_PLATFORM.toWireValue(),
         )
 
         // Use localDeviceId suffix to ensure uniqueness in the network
@@ -116,6 +118,7 @@ class MdnsDiscoveryProviderDesktop(
     private fun ServiceInfo.toDevice(): Device {
         val id = getPropertyString(TXT_DEVICE_ID) ?: name
         val deviceName = getPropertyString(TXT_DEVICE_NAME) ?: name
+        val devicePlatform = DevicePlatform.fromWireValue(getPropertyString(TXT_DEVICE_PLATFORM))
 
         val host = inet4Addresses.firstOrNull()?.hostAddress
             ?: inetAddresses.firstOrNull()?.hostAddress
@@ -128,6 +131,7 @@ class MdnsDiscoveryProviderDesktop(
             name = deviceName,
             endpoints = listOf(endpoint),
             capabilities = setOf(Capability.LAN),
+            platform = devicePlatform,
         )
     }
 
@@ -144,7 +148,9 @@ class MdnsDiscoveryProviderDesktop(
 
         const val TXT_DEVICE_ID = "id"
         const val TXT_DEVICE_NAME = "name"
+        const val TXT_DEVICE_PLATFORM = "platform"
 
         const val DEFAULT_PORT: Int = 58231
+        val LOCAL_PLATFORM: DevicePlatform = DevicePlatform.DESKTOP
     }
 }

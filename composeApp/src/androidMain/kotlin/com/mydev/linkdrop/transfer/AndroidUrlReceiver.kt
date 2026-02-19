@@ -76,7 +76,7 @@ class AndroidUrlReceiver(
                     }
                 }
 
-                if (method != "POST" || path != "/share/url") {
+                if (method != "POST" || path != TransferProtocol.SHARE_URL_PATH) {
                     writeResponse(s, 404, "not found")
                     return
                 }
@@ -100,8 +100,8 @@ class AndroidUrlReceiver(
                 }
 
                 val payload = String(bodyChars)
-                val parsed = parseShareUrlRequest(payload)
-                if (parsed == null || !isValidUrl(parsed.url)) {
+                val parsed = TransferProtocol.parseShareUrlRequest(payload)
+                if (parsed == null || !TransferProtocol.isValidUrl(parsed.url)) {
                     writeResponse(s, 400, "invalid payload")
                     return
                 }
@@ -139,45 +139,6 @@ class AndroidUrlReceiver(
         }
         socket.getOutputStream().write(response.toByteArray(StandardCharsets.UTF_8))
         socket.getOutputStream().flush()
-    }
-
-    private fun parseShareUrlRequest(rawJson: String): ShareUrlRequest? {
-        val url = extractJsonString(rawJson, "url") ?: return null
-        val fromDeviceId = extractJsonString(rawJson, "fromDeviceId") ?: return null
-        val fromName = extractJsonString(rawJson, "fromName") ?: return null
-        val sentAtEpochMs = extractJsonLong(rawJson, "sentAtEpochMs") ?: return null
-
-        return ShareUrlRequest(
-            url = url,
-            fromDeviceId = fromDeviceId,
-            fromName = fromName,
-            sentAtEpochMs = sentAtEpochMs,
-        )
-    }
-
-    private fun extractJsonString(rawJson: String, key: String): String? {
-        val pattern = Regex("\"$key\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"")
-        val value = pattern.find(rawJson)?.groupValues?.get(1) ?: return null
-        return unescapeJsonString(value)
-    }
-
-    private fun extractJsonLong(rawJson: String, key: String): Long? {
-        val pattern = Regex("\"$key\"\\s*:\\s*(\\d+)")
-        return pattern.find(rawJson)?.groupValues?.get(1)?.toLongOrNull()
-    }
-
-    private fun unescapeJsonString(value: String): String {
-        return value
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\")
-            .replace("\\n", "\n")
-            .replace("\\r", "\r")
-            .replace("\\t", "\t")
-    }
-
-    private fun isValidUrl(value: String): Boolean {
-        val trimmed = value.trim()
-        return trimmed.startsWith("http://") || trimmed.startsWith("https://")
     }
 
     companion object {
