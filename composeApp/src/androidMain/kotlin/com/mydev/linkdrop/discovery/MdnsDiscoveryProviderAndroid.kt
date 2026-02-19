@@ -10,6 +10,7 @@ import com.mydev.linkdrop.core.model.Capability
 import com.mydev.linkdrop.core.model.DiscoveryConstants
 import com.mydev.linkdrop.core.model.Device
 import com.mydev.linkdrop.core.model.Endpoint
+import com.mydev.linkdrop.core.model.DevicePlatform
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -109,6 +110,7 @@ class MdnsDiscoveryProviderAndroid(
 
             setAttribute(TXT_DEVICE_ID, localDeviceId)
             setAttribute(TXT_DEVICE_NAME, Build.MODEL)
+            setAttribute(TXT_DEVICE_PLATFORM, LOCAL_PLATFORM.toWireValue())
         }
 
         val regListener = object : NsdManager.RegistrationListener {
@@ -224,6 +226,7 @@ class MdnsDiscoveryProviderAndroid(
     private fun NsdServiceInfo.toDevice(): Device {
         val id = getTxtString(TXT_DEVICE_ID) ?: serviceName
         val name = getTxtString(TXT_DEVICE_NAME) ?: serviceName
+        val platform = DevicePlatform.fromWireValue(getTxtString(TXT_DEVICE_PLATFORM))
 
         val hostStr = host?.hostAddress ?: ""
         val endpoint = Endpoint.Lan(host = hostStr, port = port)
@@ -233,6 +236,7 @@ class MdnsDiscoveryProviderAndroid(
             name = name,
             endpoints = listOf(endpoint),
             capabilities = setOf(Capability.LAN),
+            platform = platform,
         )
     }
 
@@ -250,9 +254,11 @@ class MdnsDiscoveryProviderAndroid(
 
         const val TXT_DEVICE_ID = "id"
         const val TXT_DEVICE_NAME = "name"
+        const val TXT_DEVICE_PLATFORM = "platform"
 
         const val DEFAULT_PORT: Int = 58231
         const val DEFAULT_DEVICE_NAME: String = "Android"
+        val LOCAL_PLATFORM: DevicePlatform = DevicePlatform.ANDROID
         const val MAX_RESOLVE_RETRIES: Int = 3
         const val INITIAL_RESOLVE_RETRY_BACKOFF_MS: Long = 250
     }

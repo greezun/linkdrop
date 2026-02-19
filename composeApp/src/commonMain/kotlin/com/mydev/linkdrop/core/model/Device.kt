@@ -12,4 +12,5 @@ data class Device(
     val name: String,
     val endpoints: List<Endpoint>,
     val capabilities: Set<Capability>,
+    val platform: DevicePlatform = DevicePlatform.UNKNOWN,
 )

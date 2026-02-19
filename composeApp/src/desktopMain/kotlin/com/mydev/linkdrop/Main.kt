@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import com.mydev.linkdrop.core.model.Device
+import com.mydev.linkdrop.core.model.DevicePlatform
 import com.mydev.linkdrop.core.model.Endpoint
 import com.mydev.linkdrop.discovery.DesktopDiscovery
 import com.mydev.linkdrop.discovery.findWifiIpv4Address
@@ -55,7 +55,7 @@ fun main() = application {
                 val lanHost = (device.endpoints.firstOrNull() as? Endpoint.Lan)?.host
                 device.id != localDeviceId &&
                     (localLanHost == null || lanHost != localLanHost) &&
-                    isLikelyAndroidDevice(device)
+                    device.platform == DevicePlatform.ANDROID
             }
         }
 
@@ -179,15 +179,4 @@ fun main() = application {
             }
         }
     }
-}
-
-private fun isLikelyAndroidDevice(device: Device): Boolean {
-    val name = device.name.lowercase()
-    return name.contains("android") ||
-        name.contains("pixel") ||
-        name.contains("samsung") ||
-        name.contains("xiaomi") ||
-        name.contains("redmi") ||
-        name.contains("oneplus") ||
-        name.startsWith("sdk")
 }
