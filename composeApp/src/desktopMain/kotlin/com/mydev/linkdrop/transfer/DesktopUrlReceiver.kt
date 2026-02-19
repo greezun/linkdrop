@@ -10,6 +10,8 @@ import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.logging.Level
+import java.util.logging.Logger
 
 class DesktopUrlReceiver(
     private val port: Int = MdnsDiscoveryProviderDesktop.DEFAULT_PORT,
@@ -45,6 +47,7 @@ class DesktopUrlReceiver(
 
     private fun handleShareUrl(exchange: HttpExchange) {
         if (exchange.requestMethod != "POST") {
+            logger.warning("Rejected request: method=${exchange.requestMethod} path=${exchange.requestURI.path}")
             writeResponse(exchange, 405, "method not allowed")
             return
         }
@@ -52,11 +55,13 @@ class DesktopUrlReceiver(
         val payload = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
         val parsed = parseShareUrlRequest(payload)
         if (parsed == null) {
+            logger.warning("Rejected request: invalid payload json=$payload")
             writeResponse(exchange, 400, "invalid payload")
             return
         }
 
         if (!isValidUrl(parsed.url)) {
+            logger.warning("Rejected request: invalid url='${parsed.url}' payload=$payload")
             writeResponse(exchange, 400, "invalid url")
             return
         }
@@ -72,14 +77,19 @@ class DesktopUrlReceiver(
             listOf(received) + current
         }
 
+        logger.info("Accepted URL from='${received.fromName}' url='${received.url}'")
         writeResponse(exchange, 200, "ok")
     }
 
     private fun writeResponse(exchange: HttpExchange, statusCode: Int, body: String) {
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
-        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
-        exchange.responseBody.use { out ->
-            out.write(bytes)
+        try {
+            exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
+            exchange.responseBody.use { out ->
+                out.write(bytes)
+            }
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Failed to write response status=$statusCode body=$body", t)
         }
     }
 
@@ -120,5 +130,9 @@ class DesktopUrlReceiver(
     private fun isValidUrl(value: String): Boolean {
         val trimmed = value.trim()
         return trimmed.startsWith("http://") || trimmed.startsWith("https://")
+    }
+
+    companion object {
+        private val logger: Logger = Logger.getLogger(DesktopUrlReceiver::class.java.name)
     }
 }
